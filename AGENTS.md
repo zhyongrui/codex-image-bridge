@@ -22,6 +22,11 @@ When a user asks to diagnose, install, repair, or uninstall the bridge:
    requested.
 8. Do not retry non-idempotent Responses or image POST requests.
 9. Preserve rollback behavior and unrelated user configuration.
+10. Never stop, unregister, or uninstall the active bridge across separate
+    Codex model turns while the current provider points at it. That disconnects
+    Codex from its own control path. For lifecycle validation, prefer automated
+    tests or use one external process that restores the bridge in `finally`
+    before returning control to Codex.
 
 The canonical runtime files live in
 `skills/codex-image-bridge/scripts/`. Run the test suite after changes:

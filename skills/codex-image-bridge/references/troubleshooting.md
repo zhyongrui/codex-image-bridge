@@ -23,6 +23,23 @@
 - `Scheduled Task`: on Windows, query `Codex Image Bridge` with `schtasks`
   without printing its XML or arguments, then rerun installation.
 
+## Codex Disconnects During Lifecycle Validation
+
+If the active provider points at the loopback bridge, uninstalling or stopping
+that bridge also removes the current task's route to the upstream model. This
+is a control-path interruption, not evidence that the Codex application was
+damaged.
+
+1. Do not attempt another destructive lifecycle step from the disconnected
+   task.
+2. If uninstall restored the upstream URL, restart Codex or open a new task so
+   it reloads the provider configuration.
+3. If the configuration still points at loopback, run the bundled manager's
+   `install` command from ordinary PowerShell or Terminal, then run doctor and
+   open a new Codex task. Do not hand-edit the config.
+4. For future validation, rely on CI/unit tests or place stop, assertions, and
+   reinstall in one external process with unconditional recovery in `finally`.
+
 ## Codex Sandbox Denies LaunchAgent Registration
 
 Treat a denial at `launchctl bootstrap` as an execution-permission boundary,

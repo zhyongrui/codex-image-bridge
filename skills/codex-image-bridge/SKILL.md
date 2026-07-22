@@ -86,8 +86,16 @@ does not prove the upstream did not receive the request.
 
 ## Uninstall
 
-When the user explicitly asks to remove or restore the bridge, run the installed
-manager with Python 3.11+. On macOS:
+The current Codex task can depend on the bridge it is about to remove. Warn the
+user that a live uninstall can disconnect this task and require reopening
+Codex. Never use live uninstall as a multi-turn validation sequence. Prefer the
+test suite; if native lifecycle validation is essential, use one external
+process that performs assertions and reinstalls in `finally` before Codex
+continues.
+
+When the user explicitly asks to remove or restore the bridge and accepts that
+the current task may disconnect, run the installed manager with Python 3.11+.
+On macOS:
 
 ```bash
 "$HOME/.codex/image-bridge/bridge_manager.py" uninstall
@@ -101,7 +109,9 @@ py -3.12 "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
 
 The manager restores the original URL only when the current URL still matches
 the installed bridge URL. Report when it intentionally leaves a newer user
-configuration unchanged.
+configuration unchanged. If the task disconnects after a successful uninstall,
+restart Codex or open a new task so it uses the restored upstream URL. Do not
+hand-edit `config.toml` as recovery.
 
 ## Boundaries
 
@@ -114,5 +124,6 @@ configuration unchanged.
 - Never replace the current config wholesale with a backup.
 - Never persist credentials outside the user's existing Codex configuration.
 - Never expose the bridge beyond a loopback address.
+- Never leave the active bridge stopped between Codex turns during validation.
 - Read `references/troubleshooting.md` only when preflight, installation, or
   doctor reports a failure.
