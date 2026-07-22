@@ -28,6 +28,7 @@ from bridge_manager import (
     top_level_value,
     validate_upstream,
     windows_task_arguments,
+    windows_background_runtime,
     windows_task_payload,
 )
 
@@ -160,6 +161,15 @@ class RuntimeAndServiceTests(unittest.TestCase):
         )
         self.assertIn('"C:\\Users\\Example User\\bridge.py"', arguments)
         self.assertIn('"C:\\Users\\Example User\\bridge.log"', arguments)
+
+    def test_windows_task_prefers_windowless_python_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory) / "python.exe"
+            background = Path(directory) / "pythonw.exe"
+            runtime.write_bytes(b"")
+            self.assertEqual(windows_background_runtime(str(runtime)), str(runtime))
+            background.write_bytes(b"")
+            self.assertEqual(windows_background_runtime(str(runtime)), str(background))
 
     def test_windows_install_updates_config_and_creates_task_definition(self):
         with tempfile.TemporaryDirectory() as directory:

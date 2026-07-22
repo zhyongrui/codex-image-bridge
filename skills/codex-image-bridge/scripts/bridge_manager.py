@@ -296,6 +296,11 @@ def windows_task_arguments(
     )
 
 
+def windows_background_runtime(runtime: str) -> str:
+    candidate = Path(runtime).with_name("pythonw.exe")
+    return str(candidate) if candidate.is_file() else runtime
+
+
 def windows_task_payload(
     runtime: str,
     script: Path,
@@ -344,7 +349,9 @@ def windows_task_payload(
     ET.SubElement(restart, "{%s}Count" % TASK_XML_NAMESPACE).text = "999"
     actions = ET.SubElement(root, "{%s}Actions" % TASK_XML_NAMESPACE, {"Context": "Author"})
     execute = ET.SubElement(actions, "{%s}Exec" % TASK_XML_NAMESPACE)
-    ET.SubElement(execute, "{%s}Command" % TASK_XML_NAMESPACE).text = runtime
+    ET.SubElement(execute, "{%s}Command" % TASK_XML_NAMESPACE).text = windows_background_runtime(
+        runtime
+    )
     ET.SubElement(execute, "{%s}Arguments" % TASK_XML_NAMESPACE).text = windows_task_arguments(
         script, upstream, model, host, port, mount, log_path
     )
