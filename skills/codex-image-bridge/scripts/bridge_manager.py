@@ -37,6 +37,12 @@ class ManagerError(RuntimeError):
     pass
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def current_platform() -> str:
     return sys.platform
 
@@ -836,6 +842,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    configure_stdio()
     parser = build_parser()
     args = parser.parse_args()
     try:

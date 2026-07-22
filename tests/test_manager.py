@@ -1,6 +1,8 @@
 import json
 import io
 import plistlib
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -95,6 +97,24 @@ class RuntimeAndServiceTests(unittest.TestCase):
         result = python_probe(sys.executable)
         self.assertIsNotNone(result)
         self.assertGreaterEqual(tuple(int(value) for value in result[0].split(".")[:2]), (3, 11))
+
+    def test_manager_prints_unicode_paths_when_initial_encoding_is_legacy(self):
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "cp1252"
+        code = (
+            "import sys; "
+            f"sys.path.insert(0, {str(SCRIPTS)!r}); "
+            "from bridge_manager import configure_stdio; "
+            "configure_stdio(); print('Codex 图像桥接测试')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=environment,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
+        self.assertIn("Codex 图像桥接测试", result.stdout.decode("utf-8"))
 
     def test_runtime_copy_is_safe_when_manager_reinstalls_itself(self):
         with tempfile.TemporaryDirectory() as directory:
