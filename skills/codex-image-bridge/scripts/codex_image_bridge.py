@@ -29,7 +29,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
-BRIDGE_VERSION = "1.3.0-dev"
+BRIDGE_VERSION = "1.3.0"
 
 
 @dataclass(frozen=True)

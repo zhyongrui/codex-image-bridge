@@ -46,11 +46,31 @@ $codex-image-bridge 修复当前 provider 不能生图的问题
 ## 安全性
 
 - 只监听本机回环地址；
-- 不把 API Key 写入桥接代码、状态或 LaunchAgent；
+- 不把 API Key 写入桥接代码、状态、LaunchAgent 或 Windows 计划任务；
 - 不打印完整 Codex 配置或认证请求头；
 - 不自动重试可能已经到达上游的生图 POST；
 - 卸载时只恢复本工具实际修改过且仍未被用户再次改动的地址。
 
-macOS 支持已经过真实环境验证。Windows 自动安装正在
-`windows-support` 分支进行真实系统验证，验证完成前不要把测试矩阵通过
-等同于 Windows 安装已经发布。
+自动安装已在 macOS 和 Windows 原生环境中验证。Windows 使用当前用户的
+计划任务，并在可用时通过 `pythonw.exe` 后台运行，不会持续显示命令行窗口。
+桥接器只使用 Python 标准库。
+
+## 手动命令
+
+macOS：
+
+```bash
+/usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py preflight
+/usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py install
+~/.codex/image-bridge/bridge_manager.py doctor
+~/.codex/image-bridge/bridge_manager.py uninstall
+```
+
+Windows PowerShell（Python 3.12；如果尚未加入 `PATH`，请使用绝对路径）：
+
+```powershell
+python skills\codex-image-bridge\scripts\bridge_manager.py preflight
+python skills\codex-image-bridge\scripts\bridge_manager.py install
+python "$HOME\.codex\image-bridge\bridge_manager.py" doctor
+python "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
+```

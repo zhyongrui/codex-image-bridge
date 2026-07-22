@@ -37,7 +37,3 @@ python3 -m unittest -v tests/test_bridge.py tests/test_manager.py
 
 Do not commit generated images, logs, local state, config backups, archives,
 credentials, or personalized service definitions.
-
-Windows support is developed on the `windows-support` branch until the native
-validation checklist in the corresponding GitHub issue passes. Do not merge it
-based only on the cross-platform unit-test matrix.

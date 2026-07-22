@@ -31,6 +31,11 @@ jobs:
       - name: Install, start, and uninstall the per-user Scheduled Task
         shell: pwsh
         run: |
-          ./tests/windows_service_smoke.ps1 `
-            -Python (Get-Command python).Source `
-            -WorkRoot "$env:RUNNER_TEMP\Codex Image Bridge Smoke"
+          $Python = (Get-Command python).Source
+          $WorkRoots = @(
+            "$env:RUNNER_TEMP\Codex Image Bridge Smoke",
+            "$env:RUNNER_TEMP\Codex 图像桥接测试"
+          )
+          foreach ($WorkRoot in $WorkRoots) {
+            ./tests/windows_service_smoke.ps1 -Python $Python -WorkRoot $WorkRoot
+          }

@@ -18,10 +18,18 @@ failed installations.
 /usr/bin/python3 "$skill_dir/scripts/bridge_manager.py" preflight
 ```
 
-On Windows PowerShell, resolve a Python 3.11+ command first, then run:
+On Windows PowerShell, resolve Python 3.11+ without assuming the optional `py`
+Launcher is installed:
 
 ```powershell
-py -3.12 "$skill_dir\scripts\bridge_manager.py" preflight
+$Python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $Python) {
+    $Python = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python" -Filter python.exe -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match 'Python3(11|12|13)' } |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $Python) { throw "Install Python 3.11 or newer, then rerun preflight." }
+& $Python "$skill_dir\scripts\bridge_manager.py" preflight
 ```
 
 3. Read the JSON. Do not install automatically when `applicable` is false.
@@ -39,7 +47,7 @@ For an existing Windows installation, use the same Python command selected
 during preflight:
 
 ```powershell
-py -3.12 "$HOME\.codex\image-bridge\bridge_manager.py" doctor
+& $Python "$HOME\.codex\image-bridge\bridge_manager.py" doctor
 ```
 
 Diagnosis alone does not authorize installation or configuration changes.
@@ -59,7 +67,7 @@ When the user asks to fix, install, or repair the problem:
 On Windows PowerShell:
 
 ```powershell
-py -3.12 "$skill_dir\scripts\bridge_manager.py" install
+& $Python "$skill_dir\scripts\bridge_manager.py" install
 ```
 
 4. If the sandbox denies macOS `launchctl bootstrap` or Windows Scheduled Task
@@ -104,7 +112,7 @@ On macOS:
 On Windows PowerShell:
 
 ```powershell
-py -3.12 "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
+& $Python "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
 ```
 
 The manager restores the original URL only when the current URL still matches
@@ -116,8 +124,7 @@ hand-edit `config.toml` as recovery.
 ## Boundaries
 
 - Automatic background-service installation supports macOS LaunchAgents and
-  Windows per-user Scheduled Tasks. Windows support must pass its native
-  validation checklist before release from the development branch.
+  Windows per-user Scheduled Tasks.
 - If scoped elevation is unavailable or the user declines it, stop after the
   automatic rollback and provide the exact platform-specific command as the
   final fallback. Do not describe sandbox denial as a bridge failure.

@@ -46,6 +46,8 @@ definition. Failed installs restore the prior config and service.
 
 ## Manual Commands
 
+On macOS:
+
 ```bash
 /usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py preflight
 /usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py install
@@ -53,9 +55,20 @@ definition. Failed installs restore the prior config and service.
 ~/.codex/image-bridge/bridge_manager.py uninstall
 ```
 
-macOS installation has native validation. Windows installation is under native
-validation on the `windows-support` branch; a passing unit-test matrix alone is
-not a Windows release sign-off. The proxy uses only the Python standard library.
+On Windows PowerShell with Python 3.12 (use its absolute path if `python` is
+not yet on `PATH`):
+
+```powershell
+python skills\codex-image-bridge\scripts\bridge_manager.py preflight
+python skills\codex-image-bridge\scripts\bridge_manager.py install
+python "$HOME\.codex\image-bridge\bridge_manager.py" doctor
+python "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
+```
+
+Automatic installation is natively validated on macOS and Windows. Windows
+uses a per-user Scheduled Task and runs the bridge with `pythonw.exe` when
+available, so no console window remains open. The proxy uses only the Python
+standard library.
 
 ## Development
 
