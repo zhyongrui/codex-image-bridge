@@ -133,7 +133,7 @@ class RuntimeAndServiceTests(unittest.TestCase):
         root = ET.fromstring(payload)
         namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
         self.assertEqual(root.findtext("t:Triggers/t:LogonTrigger/t:Enabled", namespaces=namespace), "true")
-        self.assertEqual(root.findtext("t:Settings/t:RestartOnFailure/t:Interval", namespaces=namespace), "PT10S")
+        self.assertEqual(root.findtext("t:Settings/t:RestartOnFailure/t:Interval", namespaces=namespace), "PT1M")
         self.assertEqual(root.findtext("t:Settings/t:RestartOnFailure/t:Count", namespaces=namespace), "999")
         serialized = payload.decode("utf-16")
         self.assertNotIn("Authorization", serialized)

@@ -334,7 +334,7 @@ def windows_task_payload(
     ):
         ET.SubElement(settings, "{%s}%s" % (TASK_XML_NAMESPACE, key)).text = value
     restart = ET.SubElement(settings, "{%s}RestartOnFailure" % TASK_XML_NAMESPACE)
-    ET.SubElement(restart, "{%s}Interval" % TASK_XML_NAMESPACE).text = "PT10S"
+    ET.SubElement(restart, "{%s}Interval" % TASK_XML_NAMESPACE).text = "PT1M"
     ET.SubElement(restart, "{%s}Count" % TASK_XML_NAMESPACE).text = "999"
     actions = ET.SubElement(root, "{%s}Actions" % TASK_XML_NAMESPACE, {"Context": "Author"})
     execute = ET.SubElement(actions, "{%s}Exec" % TASK_XML_NAMESPACE)
