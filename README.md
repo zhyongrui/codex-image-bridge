@@ -37,13 +37,16 @@ $codex-image-bridge repair image generation for my active provider
 
 - `~/.codex/config.toml`: changes only the active provider `base_url`
 - `~/.codex/image-bridge/`: installs credential-free runtime files and state
-- `~/Library/LaunchAgents/com.codex.image-bridge.plist`: runs the local service
+- macOS: `~/Library/LaunchAgents/com.codex.image-bridge.plist` runs the service
+- Windows: a per-user `Codex Image Bridge` Scheduled Task runs the service
 
 The bridge listens only on loopback and forwards Codex's existing authorization
 headers in memory. It never stores credentials in its source, state, or service
 definition. Failed installs restore the prior config and service.
 
 ## Manual Commands
+
+On macOS:
 
 ```bash
 /usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py preflight
@@ -52,8 +55,20 @@ definition. Failed installs restore the prior config and service.
 ~/.codex/image-bridge/bridge_manager.py uninstall
 ```
 
-Automatic service installation currently supports macOS. The proxy itself uses
-only the Python standard library.
+On Windows PowerShell with Python 3.12 (use its absolute path if `python` is
+not yet on `PATH`):
+
+```powershell
+python skills\codex-image-bridge\scripts\bridge_manager.py preflight
+python skills\codex-image-bridge\scripts\bridge_manager.py install
+python "$HOME\.codex\image-bridge\bridge_manager.py" doctor
+python "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
+```
+
+Automatic installation is natively validated on macOS and Windows. Windows
+uses a per-user Scheduled Task and runs the bridge with `pythonw.exe` when
+available, so no console window remains open. The proxy uses only the Python
+standard library.
 
 ## Development
 

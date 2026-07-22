@@ -21,7 +21,7 @@ Codex会完成：
 2. 运行只读安装计划；
 3. 判断当前系统、provider 和 Python 环境是否适用；
 4. 安装桥接器并备份配置；
-5. 启动 macOS 后台服务；
+5. 启动 macOS LaunchAgent 或 Windows 当前用户的计划任务；
 6. 检查配置、服务和上游 TLS；
 7. 失败时自动回滚；
 8. 提示你新建任务并测试 `$imagegen`。
@@ -46,9 +46,31 @@ $codex-image-bridge 修复当前 provider 不能生图的问题
 ## 安全性
 
 - 只监听本机回环地址；
-- 不把 API Key 写入桥接代码、状态或 LaunchAgent；
+- 不把 API Key 写入桥接代码、状态、LaunchAgent 或 Windows 计划任务；
 - 不打印完整 Codex 配置或认证请求头；
 - 不自动重试可能已经到达上游的生图 POST；
 - 卸载时只恢复本工具实际修改过且仍未被用户再次改动的地址。
 
-自动后台服务安装目前支持 macOS。
+自动安装已在 macOS 和 Windows 原生环境中验证。Windows 使用当前用户的
+计划任务，并在可用时通过 `pythonw.exe` 后台运行，不会持续显示命令行窗口。
+桥接器只使用 Python 标准库。
+
+## 手动命令
+
+macOS：
+
+```bash
+/usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py preflight
+/usr/bin/python3 skills/codex-image-bridge/scripts/bridge_manager.py install
+~/.codex/image-bridge/bridge_manager.py doctor
+~/.codex/image-bridge/bridge_manager.py uninstall
+```
+
+Windows PowerShell（Python 3.12；如果尚未加入 `PATH`，请使用绝对路径）：
+
+```powershell
+python skills\codex-image-bridge\scripts\bridge_manager.py preflight
+python skills\codex-image-bridge\scripts\bridge_manager.py install
+python "$HOME\.codex\image-bridge\bridge_manager.py" doctor
+python "$HOME\.codex\image-bridge\bridge_manager.py" uninstall
+```

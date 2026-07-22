@@ -20,3 +20,22 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest -v tests/test_bridge.py tests/test_manager.py
+
+  windows-service-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install, start, and uninstall the per-user Scheduled Task
+        shell: pwsh
+        run: |
+          $Python = (Get-Command python).Source
+          $WorkRoots = @(
+            "$env:RUNNER_TEMP\Codex Image Bridge Smoke",
+            "$env:RUNNER_TEMP\Codex 图像桥接测试"
+          )
+          foreach ($WorkRoot in $WorkRoots) {
+            ./tests/windows_service_smoke.ps1 -Python $Python -WorkRoot $WorkRoot
+          }
