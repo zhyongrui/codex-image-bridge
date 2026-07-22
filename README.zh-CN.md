@@ -8,10 +8,12 @@
 把下面这段话发给 Codex：
 
 ```text
-请审查并使用 https://github.com/zhyongrui/codex-image-bridge 修复我当前第三方
-Codex provider 无法生图的问题。先运行只读 preflight，不要显示或复制我的 API Key，
-必须使用仓库内的管理器，不能手工修改我的 Codex 配置。
+请使用 https://github.com/zhyongrui/codex-image-bridge 修复我当前 Codex
+provider 无法生图的问题，读取并严格遵循仓库中的说明。
 ```
+
+安全、只读检查、安装、验证、回滚和凭据保护规则都已经写在仓库的
+`AGENTS.md` 与 Skill 中，不需要用户在提示词里重复。
 
 Codex会完成：
 

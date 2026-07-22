@@ -9,15 +9,13 @@ Codex versions.
 Send this prompt to Codex:
 
 ```text
-Review and use https://github.com/zhyongrui/codex-image-bridge to diagnose and
-repair image generation for my active third-party Codex provider. Run the
-read-only preflight first, never expose my API key, and use the bundled manager
-instead of editing my Codex config manually.
+Use https://github.com/zhyongrui/codex-image-bridge to fix image generation for
+my current Codex provider. Read and follow the repository instructions.
 ```
 
-Codex will inspect the repository, run a read-only plan, install the local
-bridge when applicable, validate the service, and tell you when to open a new
-task and test `$imagegen`.
+All safety, preflight, installation, validation, rollback, and credential rules
+live in `AGENTS.md` and the bundled skill. Codex will read them from the
+repository instead of requiring a long user prompt.
 
 ## Install As A Reusable Skill
 

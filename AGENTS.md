@@ -5,16 +5,18 @@ This repository is designed for Codex-assisted installation of the bundled
 
 When a user asks to diagnose, install, repair, or uninstall the bridge:
 
-1. Read `skills/codex-image-bridge/SKILL.md` and follow it exactly.
-2. Run `preflight` before any mutation.
-3. Use only the bundled manager for config and service changes; do not hand-edit
+1. If the user supplied only the repository URL, inspect or check out the
+   repository first; never execute an opaque remote script.
+2. Read `skills/codex-image-bridge/SKILL.md` and follow it exactly.
+3. Run `preflight` before any mutation.
+4. Use only the bundled manager for config and service changes; do not hand-edit
    `~/.codex/config.toml` or a LaunchAgent.
-4. Never print or copy tokens, API keys, authorization headers, request bodies,
+5. Never print or copy tokens, API keys, authorization headers, request bodies,
    or the complete Codex config.
-5. Do not perform a billable image-generation smoke test unless explicitly
+6. Do not perform a billable image-generation smoke test unless explicitly
    requested.
-6. Do not retry non-idempotent Responses or image POST requests.
-7. Preserve rollback behavior and unrelated user configuration.
+7. Do not retry non-idempotent Responses or image POST requests.
+8. Preserve rollback behavior and unrelated user configuration.
 
 The canonical runtime files live in
 `skills/codex-image-bridge/scripts/`. Run the test suite after changes:
