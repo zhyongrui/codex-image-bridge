@@ -18,6 +18,7 @@ from bridge_manager import (
     command_install,
     command_uninstall,
     command_preflight,
+    copy_runtime_file,
     is_bridge_url,
     launchctl_failure,
     plist_payload,
@@ -93,6 +94,13 @@ class RuntimeAndServiceTests(unittest.TestCase):
         result = python_probe(sys.executable)
         self.assertIsNotNone(result)
         self.assertGreaterEqual(tuple(int(value) for value in result[0].split(".")[:2]), (3, 11))
+
+    def test_runtime_copy_is_safe_when_manager_reinstalls_itself(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "bridge_manager.py"
+            script.write_text("test")
+            copy_runtime_file(script, script)
+            self.assertEqual(script.read_text(), "test")
 
     def test_plist_contains_no_credentials(self):
         payload = plist_payload(

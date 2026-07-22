@@ -238,6 +238,12 @@ def atomic_write(path: Path, content: bytes, mode: int = 0o600) -> None:
     os.replace(temporary, path)
 
 
+def copy_runtime_file(source: Path, destination: Path) -> None:
+    if source.resolve() == destination.resolve():
+        return
+    shutil.copy2(source, destination)
+
+
 def run_command(arguments: Sequence[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(list(arguments), text=True, capture_output=True, check=check)
 
@@ -496,8 +502,8 @@ def command_install(args: argparse.Namespace) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     installed_script = install_dir / "codex_image_bridge.py"
     installed_manager = install_dir / "bridge_manager.py"
-    shutil.copy2(source_script, installed_script)
-    shutil.copy2(Path(__file__), installed_manager)
+    copy_runtime_file(source_script, installed_script)
+    copy_runtime_file(Path(__file__), installed_manager)
     os.chmod(installed_script, 0o755)
     os.chmod(installed_manager, 0o755)
 
