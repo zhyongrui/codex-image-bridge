@@ -224,14 +224,23 @@ def stop_service() -> None:
     run_command(["launchctl", "bootout", launch_domain() + "/" + LABEL], check=False)
 
 
+def launchctl_failure(operation: str, result: subprocess.CompletedProcess) -> ManagerError:
+    detail = result.stderr.strip() or result.stdout.strip() or "exit status %d" % result.returncode
+    return ManagerError(
+        "launchctl %s failed: %s. If Codex sandboxing denied this operation, rerun the "
+        "same installer with scoped elevated permissions to register the current user's "
+        "LaunchAgent; do not use sudo." % (operation, detail)
+    )
+
+
 def start_service(plist_path: Path) -> None:
     stop_service()
     result = run_command(["launchctl", "bootstrap", launch_domain(), str(plist_path)], check=False)
     if result.returncode:
-        raise ManagerError("launchctl bootstrap failed: " + (result.stderr.strip() or result.stdout.strip()))
+        raise launchctl_failure("bootstrap", result)
     result = run_command(["launchctl", "kickstart", "-k", launch_domain() + "/" + LABEL], check=False)
     if result.returncode:
-        raise ManagerError("launchctl kickstart failed: " + (result.stderr.strip() or result.stdout.strip()))
+        raise launchctl_failure("kickstart", result)
 
 
 def plist_payload(

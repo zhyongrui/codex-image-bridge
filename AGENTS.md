@@ -11,12 +11,15 @@ When a user asks to diagnose, install, repair, or uninstall the bridge:
 3. Run `preflight` before any mutation.
 4. Use only the bundled manager for config and service changes; do not hand-edit
    `~/.codex/config.toml` or a LaunchAgent.
-5. Never print or copy tokens, API keys, authorization headers, request bodies,
+5. If `launchctl bootstrap` is denied by the Codex sandbox, request scoped
+   elevated execution and rerun the same installer. Do not use `sudo` and do
+   not hand the task back to Terminal until escalation is unavailable or denied.
+6. Never print or copy tokens, API keys, authorization headers, request bodies,
    or the complete Codex config.
-6. Do not perform a billable image-generation smoke test unless explicitly
+7. Do not perform a billable image-generation smoke test unless explicitly
    requested.
-7. Do not retry non-idempotent Responses or image POST requests.
-8. Preserve rollback behavior and unrelated user configuration.
+8. Do not retry non-idempotent Responses or image POST requests.
+9. Preserve rollback behavior and unrelated user configuration.
 
 The canonical runtime files live in
 `skills/codex-image-bridge/scripts/`. Run the test suite after changes:

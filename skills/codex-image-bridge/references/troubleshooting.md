@@ -21,6 +21,21 @@
   cannot repair an upstream outage.
 - `LaunchAgent`: rerun installation; it regenerates and reloads the service.
 
+## Codex Sandbox Denies LaunchAgent Registration
+
+Treat a denial at `launchctl bootstrap` as an execution-permission boundary,
+not as an incompatible provider or broken bridge. The installer automatically
+rolls back the config and service definition after the denied attempt.
+
+1. Request scoped elevated execution with the justification: "Register the
+   current user's local Codex Image Bridge LaunchAgent and complete the
+   previously approved installation."
+2. Rerun the exact same `bridge_manager.py install` command outside the sandbox.
+3. Do not add `sudo`; this is a per-user LaunchAgent in the `gui/<uid>` domain.
+4. Run doctor after the elevated installer succeeds.
+5. Give the user a Terminal command only when the runtime has no approval or
+   escalation capability, or when the user declines the request.
+
 ## HTTP Errors
 
 - `404` or `405` from `/images/generations`: the provider likely lacks the

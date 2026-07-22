@@ -43,14 +43,20 @@ When the user asks to fix, install, or repair the problem:
 /usr/bin/python3 "$skill_dir/scripts/bridge_manager.py" install
 ```
 
-4. Run the installed doctor:
+4. If the sandbox denies `launchctl bootstrap`, immediately request scoped
+   elevated execution and rerun the same installer command outside the sandbox.
+   Explain that elevation is required only to register the current user's
+   LaunchAgent. Do not use `sudo`. Do not send the user to Terminal before
+   attempting the product's approval/escalation mechanism. A normal rollback
+   after the first denied attempt is expected and makes the retry safe.
+5. Run the installed doctor:
 
 ```bash
 "$HOME/.codex/image-bridge/bridge_manager.py" doctor
 ```
 
-5. Report the bridge version, runtime, config, TLS, and service results.
-6. Ask the user to restart Codex or open a new task, then invoke `$imagegen`.
+6. Report the bridge version, runtime, config, TLS, and service results.
+7. Ask the user to restart Codex or open a new task, then invoke `$imagegen`.
    Only perform a real image generation in the current task when explicitly
    requested because it can consume quota.
 
@@ -72,6 +78,9 @@ configuration unchanged.
 ## Boundaries
 
 - Automatic background-service installation currently supports macOS only.
+- If scoped elevation is unavailable or the user declines it, stop after the
+  automatic rollback and provide the exact non-`sudo` Terminal command as the
+  final fallback. Do not describe sandbox denial as a bridge failure.
 - Never replace the current config wholesale with a backup.
 - Never persist credentials outside the user's existing Codex configuration.
 - Never expose the bridge beyond a loopback address.

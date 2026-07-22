@@ -17,6 +17,7 @@ from bridge_manager import (
     command_uninstall,
     command_preflight,
     is_bridge_url,
+    launchctl_failure,
     plist_payload,
     provider_base_url,
     python_probe,
@@ -89,6 +90,12 @@ class RuntimeAndServiceTests(unittest.TestCase):
         self.assertNotIn("Authorization", serialized)
         self.assertNotIn("Bearer", serialized)
         self.assertNotIn("secret", serialized)
+
+    def test_launchctl_failure_routes_codex_to_scoped_elevation(self):
+        result = SimpleNamespace(returncode=5, stderr="Operation not permitted", stdout="")
+        message = str(launchctl_failure("bootstrap", result))
+        self.assertIn("scoped elevated permissions", message)
+        self.assertIn("do not use sudo", message)
 
     def test_uninstall_restores_only_recorded_provider_url(self):
         with tempfile.TemporaryDirectory() as directory:
