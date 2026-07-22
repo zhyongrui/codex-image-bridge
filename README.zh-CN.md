@@ -21,7 +21,7 @@ Codex会完成：
 2. 运行只读安装计划；
 3. 判断当前系统、provider 和 Python 环境是否适用；
 4. 安装桥接器并备份配置；
-5. 启动 macOS 后台服务；
+5. 启动 macOS LaunchAgent 或 Windows 当前用户的计划任务；
 6. 检查配置、服务和上游 TLS；
 7. 失败时自动回滚；
 8. 提示你新建任务并测试 `$imagegen`。
@@ -51,4 +51,6 @@ $codex-image-bridge 修复当前 provider 不能生图的问题
 - 不自动重试可能已经到达上游的生图 POST；
 - 卸载时只恢复本工具实际修改过且仍未被用户再次改动的地址。
 
-自动后台服务安装目前支持 macOS。
+macOS 支持已经过真实环境验证。Windows 自动安装正在
+`windows-support` 分支进行真实系统验证，验证完成前不要把测试矩阵通过
+等同于 Windows 安装已经发布。

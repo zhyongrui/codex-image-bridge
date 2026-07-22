@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Install, diagnose, and uninstall Codex Image Bridge on macOS."""
+"""Install, diagnose, and uninstall Codex Image Bridge."""
 
 import argparse
 import ast
+import csv
 import datetime
 import glob
 import json
@@ -18,11 +19,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
 LABEL = "com.codex.image-bridge"
+WINDOWS_TASK_NAME = "Codex Image Bridge"
+TASK_XML_NAMESPACE = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 DEFAULT_PORT = 8787
 DEFAULT_MOUNT = "/openai"
 MIN_PYTHON = (3, 11)
@@ -31,6 +35,10 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 class ManagerError(RuntimeError):
     pass
+
+
+def current_platform() -> str:
+    return sys.platform
 
 
 def codex_home(value: Optional[str]) -> Path:
@@ -132,6 +140,8 @@ def validate_upstream(value: str) -> str:
     parsed = urllib.parse.urlsplit(normalized)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ManagerError("upstream must be an absolute http(s) URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ManagerError("upstream URL cannot contain credentials, a query, or a fragment")
     if (parsed.hostname or "") in LOOPBACK_HOSTS:
         raise ManagerError("upstream cannot point back to the local bridge")
     return normalized
@@ -167,6 +177,22 @@ def runtime_candidates(explicit: Optional[str]) -> Sequence[str]:
         sorted(
             glob.glob(
                 str(Path.home() / ".cache/codex-runtimes/*/dependencies/python/bin/python3")
+            ),
+            reverse=True,
+        )
+    )
+    candidates.extend(
+        sorted(
+            glob.glob(
+                str(Path.home() / ".cache/codex-runtimes/*/dependencies/python/python.exe")
+            ),
+            reverse=True,
+        )
+    )
+    candidates.extend(
+        sorted(
+            glob.glob(
+                str(Path.home() / ".cache/codex-runtimes/*/dependencies/python/Scripts/python.exe")
             ),
             reverse=True,
         )
@@ -222,6 +248,139 @@ def launch_domain() -> str:
 
 def stop_service() -> None:
     run_command(["launchctl", "bootout", launch_domain() + "/" + LABEL], check=False)
+
+
+def windows_task_command() -> str:
+    return shutil.which("schtasks.exe") or shutil.which("schtasks") or "schtasks.exe"
+
+
+def windows_user_sid() -> str:
+    result = run_command(["whoami.exe", "/user", "/fo", "csv", "/nh"], check=False)
+    if result.returncode:
+        raise ManagerError("could not determine the current Windows user SID: " + result.stderr.strip())
+    try:
+        row = next(csv.reader([result.stdout.strip()]))
+        sid = row[-1].strip()
+    except (csv.Error, IndexError, StopIteration):
+        raise ManagerError("could not parse the current Windows user SID")
+    if not re.fullmatch(r"S-\d+(?:-\d+)+", sid, flags=re.IGNORECASE):
+        raise ManagerError("unexpected Windows user SID returned by whoami")
+    return sid
+
+
+def windows_task_arguments(
+    script: Path, upstream: str, model: str, host: str, port: int, mount: str, log_path: Path
+) -> str:
+    return subprocess.list2cmdline(
+        [
+            str(script),
+            "--upstream",
+            upstream,
+            "--model",
+            model,
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--mount",
+            mount,
+            "--log-file",
+            str(log_path),
+        ]
+    )
+
+
+def windows_task_payload(
+    runtime: str,
+    script: Path,
+    upstream: str,
+    model: str,
+    host: str,
+    port: int,
+    mount: str,
+    log_path: Path,
+    user_sid: str,
+) -> bytes:
+    ET.register_namespace("", TASK_XML_NAMESPACE)
+    root = ET.Element("{%s}Task" % TASK_XML_NAMESPACE, {"version": "1.4"})
+    registration = ET.SubElement(root, "{%s}RegistrationInfo" % TASK_XML_NAMESPACE)
+    ET.SubElement(registration, "{%s}Description" % TASK_XML_NAMESPACE).text = (
+        "Runs the per-user Codex Image Bridge on loopback."
+    )
+    triggers = ET.SubElement(root, "{%s}Triggers" % TASK_XML_NAMESPACE)
+    trigger = ET.SubElement(triggers, "{%s}LogonTrigger" % TASK_XML_NAMESPACE)
+    ET.SubElement(trigger, "{%s}Enabled" % TASK_XML_NAMESPACE).text = "true"
+    ET.SubElement(trigger, "{%s}UserId" % TASK_XML_NAMESPACE).text = user_sid
+    principals = ET.SubElement(root, "{%s}Principals" % TASK_XML_NAMESPACE)
+    principal = ET.SubElement(principals, "{%s}Principal" % TASK_XML_NAMESPACE, {"id": "Author"})
+    ET.SubElement(principal, "{%s}UserId" % TASK_XML_NAMESPACE).text = user_sid
+    ET.SubElement(principal, "{%s}LogonType" % TASK_XML_NAMESPACE).text = "InteractiveToken"
+    ET.SubElement(principal, "{%s}RunLevel" % TASK_XML_NAMESPACE).text = "LeastPrivilege"
+    settings = ET.SubElement(root, "{%s}Settings" % TASK_XML_NAMESPACE)
+    for key, value in (
+        ("MultipleInstancesPolicy", "IgnoreNew"),
+        ("DisallowStartIfOnBatteries", "false"),
+        ("StopIfGoingOnBatteries", "false"),
+        ("AllowHardTerminate", "true"),
+        ("StartWhenAvailable", "true"),
+        ("RunOnlyIfNetworkAvailable", "false"),
+        ("AllowStartOnDemand", "true"),
+        ("Enabled", "true"),
+        ("Hidden", "false"),
+        ("RunOnlyIfIdle", "false"),
+        ("WakeToRun", "false"),
+        ("ExecutionTimeLimit", "PT0S"),
+        ("Priority", "7"),
+    ):
+        ET.SubElement(settings, "{%s}%s" % (TASK_XML_NAMESPACE, key)).text = value
+    restart = ET.SubElement(settings, "{%s}RestartOnFailure" % TASK_XML_NAMESPACE)
+    ET.SubElement(restart, "{%s}Interval" % TASK_XML_NAMESPACE).text = "PT10S"
+    ET.SubElement(restart, "{%s}Count" % TASK_XML_NAMESPACE).text = "999"
+    actions = ET.SubElement(root, "{%s}Actions" % TASK_XML_NAMESPACE, {"Context": "Author"})
+    execute = ET.SubElement(actions, "{%s}Exec" % TASK_XML_NAMESPACE)
+    ET.SubElement(execute, "{%s}Command" % TASK_XML_NAMESPACE).text = runtime
+    ET.SubElement(execute, "{%s}Arguments" % TASK_XML_NAMESPACE).text = windows_task_arguments(
+        script, upstream, model, host, port, mount, log_path
+    )
+    ET.SubElement(execute, "{%s}WorkingDirectory" % TASK_XML_NAMESPACE).text = str(script.parent)
+    return ET.tostring(root, encoding="utf-16", xml_declaration=True)
+
+
+def windows_task_query(xml: bool = False) -> subprocess.CompletedProcess:
+    arguments = [windows_task_command(), "/Query", "/TN", WINDOWS_TASK_NAME]
+    if xml:
+        arguments.append("/XML")
+    return run_command(arguments, check=False)
+
+
+def stop_windows_service() -> None:
+    run_command([windows_task_command(), "/End", "/TN", WINDOWS_TASK_NAME], check=False)
+
+
+def delete_windows_service() -> None:
+    stop_windows_service()
+    run_command([windows_task_command(), "/Delete", "/TN", WINDOWS_TASK_NAME, "/F"], check=False)
+
+
+def install_windows_service(task_path: Path) -> None:
+    stop_windows_service()
+    result = run_command(
+        [windows_task_command(), "/Create", "/TN", WINDOWS_TASK_NAME, "/XML", str(task_path), "/F"],
+        check=False,
+    )
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or "exit status %d" % result.returncode
+        raise ManagerError(
+            "Windows Task Scheduler registration failed: %s. If Codex sandboxing denied "
+            "this operation, rerun the same installer with scoped elevated permissions; "
+            "do not use an Administrator shell unless Codex cannot request approval." % detail
+        )
+    result = run_command([windows_task_command(), "/Run", "/TN", WINDOWS_TASK_NAME], check=False)
+    if result.returncode:
+        raise ManagerError(
+            "Windows Task Scheduler could not start the bridge: "
+            + (result.stderr.strip() or result.stdout.strip())
+        )
 
 
 def launchctl_failure(operation: str, result: subprocess.CompletedProcess) -> ManagerError:
@@ -282,8 +441,9 @@ def validate_config(runtime: str, path: Path) -> None:
 
 
 def command_install(args: argparse.Namespace) -> None:
-    if sys.platform != "darwin":
-        raise ManagerError("automatic service installation currently supports macOS; use manual mode on this OS")
+    platform_name = current_platform()
+    if platform_name not in {"darwin", "win32"}:
+        raise ManagerError("automatic service installation currently supports macOS and Windows")
     home = codex_home(args.codex_home)
     config_path = home / "config.toml"
     if not config_path.exists():
@@ -302,10 +462,22 @@ def command_install(args: argparse.Namespace) -> None:
     install_dir = home / "image-bridge"
     state_path = install_dir / "state.json"
     state = load_state(state_path)
-    plist_path = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
-    previous_plist = plist_path.read_bytes() if plist_path.exists() else None
+    service_path = (
+        Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
+        if platform_name == "darwin"
+        else install_dir / "windows-task.xml"
+    )
+    previous_service = service_path.read_bytes() if service_path.exists() else None
+    if platform_name == "win32":
+        task_exists = windows_task_query().returncode == 0
+        if task_exists and not state and previous_service is None:
+            raise ManagerError(
+                "a Windows Scheduled Task named %r already exists but is not managed by this "
+                "installation; remove or rename it before installing" % WINDOWS_TASK_NAME
+            )
     previous_state = state_path.read_bytes() if state_path.exists() else None
-    inferred = args.upstream or state.get("original_base_url") or legacy_upstream(plist_path)
+    legacy = legacy_upstream(service_path) if platform_name == "darwin" else None
+    inferred = args.upstream or state.get("original_base_url") or legacy
     if not inferred and not is_bridge_url(current_url):
         inferred = current_url
     if not isinstance(inferred, str):
@@ -346,13 +518,25 @@ def command_install(args: argparse.Namespace) -> None:
             atomic_write(config_path, config_text.encode("utf-8"), config_path.stat().st_mode & 0o777)
             raise
 
-    atomic_write(
-        plist_path,
-        plist_payload(runtime, installed_script, upstream, model, args.host, args.port, mount, log_dir),
-        0o644,
-    )
+    if platform_name == "darwin":
+        service_payload = plist_payload(
+            runtime, installed_script, upstream, model, args.host, args.port, mount, log_dir
+        )
+    else:
+        service_payload = windows_task_payload(
+            runtime,
+            installed_script,
+            upstream,
+            model,
+            args.host,
+            args.port,
+            mount,
+            log_dir / "image-bridge.log",
+            windows_user_sid(),
+        )
+    atomic_write(service_path, service_payload, 0o644)
     state_payload = {
-        "schema": 1,
+        "schema": 2,
         "provider": provider,
         "original_base_url": original_base_url,
         "bridge_base_url": bridge_url,
@@ -361,13 +545,17 @@ def command_install(args: argparse.Namespace) -> None:
         "runtime": runtime,
         "runtime_version": runtime_version,
         "ssl": ssl_version,
-        "plist": str(plist_path),
+        "service_definition": str(service_path),
+        "service_kind": "launchd" if platform_name == "darwin" else "task-scheduler",
         "backup": str(backup_path) if backup_path else state.get("backup"),
         "installed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     atomic_write(state_path, json.dumps(state_payload, indent=2).encode("utf-8") + b"\n")
     try:
-        start_service(plist_path)
+        if platform_name == "darwin":
+            start_service(service_path)
+        else:
+            install_windows_service(service_path)
         parsed_bridge = urllib.parse.urlsplit(bridge_url)
         health_url = "%s://%s/__codex_image_bridge__/health" % (
             parsed_bridge.scheme,
@@ -383,14 +571,19 @@ def command_install(args: argparse.Namespace) -> None:
             atomic_write(state_path, previous_state)
         elif state_path.exists():
             state_path.unlink()
-        if previous_plist is not None:
-            atomic_write(plist_path, previous_plist, 0o644)
-            try:
-                start_service(plist_path)
-            except Exception:
-                pass
-        elif plist_path.exists():
-            plist_path.unlink()
+        if platform_name == "win32":
+            delete_windows_service()
+        if previous_service is not None:
+            atomic_write(service_path, previous_service, 0o644)
+        elif service_path.exists():
+            service_path.unlink()
+        try:
+            if platform_name == "darwin" and previous_service is not None:
+                start_service(service_path)
+            elif platform_name == "win32" and previous_service is not None:
+                install_windows_service(service_path)
+        except Exception:
+            pass
         raise
     print("Installed Codex Image Bridge")
     print("  provider: %s" % provider)
@@ -401,6 +594,7 @@ def command_install(args: argparse.Namespace) -> None:
 
 
 def command_preflight(args: argparse.Namespace) -> None:
+    platform_name = current_platform()
     home = codex_home(args.codex_home)
     config_path = home / "config.toml"
     if not config_path.exists():
@@ -416,8 +610,13 @@ def command_preflight(args: argparse.Namespace) -> None:
     install_dir = home / "image-bridge"
     state_path = install_dir / "state.json"
     state = load_state(state_path)
-    plist_path = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
-    inferred = args.upstream or state.get("original_base_url") or legacy_upstream(plist_path)
+    service_path = (
+        Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
+        if platform_name == "darwin"
+        else install_dir / "windows-task.xml"
+    )
+    legacy = legacy_upstream(service_path) if platform_name == "darwin" else None
+    inferred = args.upstream or state.get("original_base_url") or legacy
     if not inferred and not is_bridge_url(current_url):
         inferred = current_url
     upstream = validate_upstream(inferred) if isinstance(inferred, str) else None
@@ -433,8 +632,8 @@ def command_preflight(args: argparse.Namespace) -> None:
     local_host = "[%s]" % args.host if ":" in args.host else args.host
     bridge_url = "http://%s:%d%s/" % (local_host, args.port, mount)
     plan = {
-        "applicable": sys.platform == "darwin" and upstream is not None and runtime is not None,
-        "platform": sys.platform,
+        "applicable": platform_name in {"darwin", "win32"} and upstream is not None and runtime is not None,
+        "platform": platform_name,
         "active_provider": provider,
         "model": model,
         "current_base_url": current_url,
@@ -451,7 +650,7 @@ def command_preflight(args: argparse.Namespace) -> None:
         "planned_changes": [
             str(config_path),
             str(install_dir),
-            str(plist_path),
+            str(service_path),
         ],
         "credentials_will_be_persisted": False,
         "network_probe_performed": False,
@@ -501,6 +700,7 @@ def tls_check(url: str) -> Tuple[bool, str]:
 
 
 def command_doctor(args: argparse.Namespace) -> None:
+    platform_name = current_platform()
     home = codex_home(args.codex_home)
     state_path = home / "image-bridge/state.json"
     state = load_state(state_path)
@@ -526,9 +726,18 @@ def command_doctor(args: argparse.Namespace) -> None:
     upstream = str(state.get("upstream", ""))
     tls_ok, tls_detail = tls_check(upstream) if upstream else (False, "upstream missing from state")
     checks.append(("upstream TLS", tls_ok, tls_detail))
-    if sys.platform == "darwin":
+    if platform_name == "darwin":
         service = run_command(["launchctl", "print", launch_domain() + "/" + LABEL], check=False)
         checks.append(("LaunchAgent", service.returncode == 0, "loaded" if service.returncode == 0 else "not loaded"))
+    elif platform_name == "win32":
+        service = windows_task_query()
+        checks.append(
+            (
+                "Scheduled Task",
+                service.returncode == 0,
+                "registered" if service.returncode == 0 else "not registered",
+            )
+        )
     failed = False
     for name, okay, detail in checks:
         print("[OK]   %s: %s" % (name, detail) if okay else "[FAIL] %s: %s" % (name, detail))
@@ -538,6 +747,7 @@ def command_doctor(args: argparse.Namespace) -> None:
 
 
 def command_uninstall(args: argparse.Namespace) -> None:
+    platform_name = current_platform()
     home = codex_home(args.codex_home)
     install_dir = home / "image-bridge"
     state_path = install_dir / "state.json"
@@ -566,11 +776,18 @@ def command_uninstall(args: argparse.Namespace) -> None:
         print("Restored %s base_url to %s" % (provider, original))
     else:
         print("Config was not changed: current base_url no longer matches the installed bridge URL")
-    if sys.platform == "darwin":
+    if platform_name == "darwin":
         stop_service()
-    plist_path = Path(str(state.get("plist", Path.home() / "Library/LaunchAgents" / (LABEL + ".plist"))))
-    if plist_path.exists():
-        plist_path.unlink()
+    elif platform_name == "win32":
+        delete_windows_service()
+    default_service = (
+        Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
+        if platform_name == "darwin"
+        else install_dir / "windows-task.xml"
+    )
+    service_path = Path(str(state.get("service_definition") or state.get("plist") or default_service))
+    if service_path.exists():
+        service_path.unlink()
     archived = install_dir / ("state.uninstalled-" + timestamp() + ".json")
     os.replace(state_path, archived)
     print("Uninstalled service; recovery state retained at %s" % archived)

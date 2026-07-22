@@ -2,7 +2,7 @@
 
 ## Preflight Is Not Applicable
 
-- `platform` is not `darwin`: automatic service installation is unavailable.
+- `platform` is not `darwin` or `win32`: automatic service installation is unavailable.
 - `runtime.found` is false: install Python 3.11+ or pass `--python` explicitly.
 - `upstream` is null: if the config already points to a bridge and no state is
   available, recover the original provider URL from the user before installing.
@@ -20,6 +20,8 @@
 - `upstream TLS`: the provider or network is unavailable. A local reinstall
   cannot repair an upstream outage.
 - `LaunchAgent`: rerun installation; it regenerates and reloads the service.
+- `Scheduled Task`: on Windows, query `Codex Image Bridge` with `schtasks`
+  without printing its XML or arguments, then rerun installation.
 
 ## Codex Sandbox Denies LaunchAgent Registration
 
@@ -35,6 +37,21 @@ rolls back the config and service definition after the denied attempt.
 4. Run doctor after the elevated installer succeeds.
 5. Give the user a Terminal command only when the runtime has no approval or
    escalation capability, or when the user declines the request.
+
+## Codex Sandbox Denies Windows Task Registration
+
+Treat a denial from `schtasks /Create` as an execution-permission boundary. The
+installer rolls back the Codex provider URL and restores a previously managed
+task definition when possible.
+
+1. Request scoped elevated execution for registering the current user's
+   `Codex Image Bridge` Scheduled Task.
+2. Rerun the exact same manager `install` command outside the sandbox.
+3. Do not switch to an Administrator account or persist credentials in the
+   task definition.
+4. Run doctor after installation succeeds.
+5. Use an elevated PowerShell fallback only if Codex cannot request scoped
+   approval and the non-elevated current-user registration is genuinely denied.
 
 ## HTTP Errors
 
@@ -52,6 +69,12 @@ Use narrow reads such as:
 ```bash
 tail -n 100 "$HOME/.codex/log/image-bridge.log"
 tail -n 100 "$HOME/.codex/log/image-bridge.error.log"
+```
+
+On Windows PowerShell:
+
+```powershell
+Get-Content "$HOME\.codex\log\image-bridge.log" -Tail 100
 ```
 
 The bridge intentionally omits request bodies and authorization headers.

@@ -29,7 +29,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
-BRIDGE_VERSION = "1.2.0"
+BRIDGE_VERSION = "1.3.0-dev"
 
 
 @dataclass(frozen=True)
@@ -392,6 +392,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=int(os.environ.get("CODEX_IMAGE_BRIDGE_TIMEOUT", "300")),
     )
+    parser.add_argument(
+        "--log-file",
+        default=os.environ.get("CODEX_IMAGE_BRIDGE_LOG_FILE"),
+        help="write logs to this file instead of stderr",
+    )
     return parser.parse_args()
 
 
@@ -405,7 +410,12 @@ def main() -> None:
         mount_path=args.mount,
         timeout_seconds=args.timeout,
     )
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        filename=args.log_file,
+        encoding="utf-8" if args.log_file else None,
+    )
     server = create_server(args.host, args.port, config)
     display_host = "[%s]" % args.host if ":" in args.host else args.host
     logging.info(
