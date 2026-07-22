@@ -139,7 +139,7 @@ class RuntimeAndServiceTests(unittest.TestCase):
             with redirect_stdout(output):
                 command_preflight(args)
             plan = json.loads(output.getvalue())
-            self.assertTrue(plan["applicable"])
+            self.assertEqual(plan["applicable"], sys.platform == "darwin")
             self.assertFalse(plan["credentials_will_be_persisted"])
             self.assertFalse(plan["network_probe_performed"])
             self.assertEqual(config_path.read_bytes(), before)
