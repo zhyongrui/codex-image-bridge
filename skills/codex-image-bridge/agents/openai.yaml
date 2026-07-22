@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Image Bridge"
+  short_description: "Diagnose and repair third-party Codex image generation"
+  default_prompt: "Use $codex-image-bridge to diagnose and repair image generation for my active Codex provider."
