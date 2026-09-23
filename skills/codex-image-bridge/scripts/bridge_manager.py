@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 
 LABEL = "com.codex.image-bridge"
+BRIDGE_VERSION = "1.4.0"
 WINDOWS_TASK_NAME = "Codex Image Bridge"
 TASK_XML_NAMESPACE = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 DEFAULT_PORT = 8787
@@ -136,19 +137,24 @@ def replace_provider_base_url(text: str, provider: str, new_url: str) -> str:
     return "".join(lines)
 
 
-def is_bridge_url(value: str) -> bool:
-    parsed = urllib.parse.urlsplit(value)
-    return parsed.scheme == "http" and (parsed.hostname or "") in LOOPBACK_HOSTS
+def normalized_url(value: str) -> str:
+    return value.rstrip("/")
 
 
-def validate_upstream(value: str) -> str:
+def is_bridge_url(value: str, expected_urls: Sequence[str]) -> bool:
+    normalized = normalized_url(value)
+    return any(normalized == normalized_url(expected) for expected in expected_urls if expected)
+
+
+def validate_upstream(value: str, bridge_port: Optional[int] = None) -> str:
     normalized = value.rstrip("/")
     parsed = urllib.parse.urlsplit(normalized)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ManagerError("upstream must be an absolute http(s) URL")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ManagerError("upstream URL cannot contain credentials, a query, or a fragment")
-    if (parsed.hostname or "") in LOOPBACK_HOSTS:
+    upstream_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if (parsed.hostname or "") in LOOPBACK_HOSTS and upstream_port == bridge_port:
         raise ManagerError("upstream cannot point back to the local bridge")
     return normalized
 
@@ -248,6 +254,21 @@ def copy_runtime_file(source: Path, destination: Path) -> None:
     if source.resolve() == destination.resolve():
         return
     shutil.copy2(source, destination)
+
+
+def file_snapshot(path: Path) -> Optional[Tuple[bytes, int]]:
+    if not path.exists():
+        return None
+    return path.read_bytes(), path.stat().st_mode & 0o777
+
+
+def restore_file(path: Path, snapshot: Optional[Tuple[bytes, int]]) -> None:
+    if snapshot is None:
+        if path.exists():
+            path.unlink()
+        return
+    content, mode = snapshot
+    atomic_write(path, content, mode)
 
 
 def run_command(arguments: Sequence[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -481,6 +502,11 @@ def command_install(args: argparse.Namespace) -> None:
     install_dir = home / "image-bridge"
     state_path = install_dir / "state.json"
     state = load_state(state_path)
+    mount = "/" + args.mount.strip("/") if args.mount.strip("/") else ""
+    local_host = "[%s]" % args.host if ":" in args.host else args.host
+    bridge_url = "http://%s:%d%s/" % (local_host, args.port, mount)
+    known_bridge_urls = [bridge_url, str(state.get("bridge_base_url", ""))]
+    current_is_bridge = is_bridge_url(current_url, known_bridge_urls)
     service_path = (
         Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
         if platform_name == "darwin"
@@ -496,16 +522,15 @@ def command_install(args: argparse.Namespace) -> None:
             )
     previous_state = state_path.read_bytes() if state_path.exists() else None
     legacy = legacy_upstream(service_path) if platform_name == "darwin" else None
-    inferred = args.upstream or state.get("original_base_url") or legacy
-    if not inferred and not is_bridge_url(current_url):
+    inferred = args.upstream
+    if not inferred and not current_is_bridge:
         inferred = current_url
+    if not inferred:
+        inferred = state.get("original_base_url") or legacy
     if not isinstance(inferred, str):
         raise ManagerError("current base_url already points to a bridge; pass the original URL with --upstream")
-    upstream = validate_upstream(inferred)
+    upstream = validate_upstream(inferred, args.port)
     runtime, runtime_version, ssl_version = find_runtime(args.python)
-    mount = "/" + args.mount.strip("/") if args.mount.strip("/") else ""
-    local_host = "[%s]" % args.host if ":" in args.host else args.host
-    bridge_url = "http://%s:%d%s/" % (local_host, args.port, mount)
 
     source_script = Path(__file__).with_name("codex_image_bridge.py")
     if not source_script.exists():
@@ -515,62 +540,64 @@ def command_install(args: argparse.Namespace) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     installed_script = install_dir / "codex_image_bridge.py"
     installed_manager = install_dir / "bridge_manager.py"
-    copy_runtime_file(source_script, installed_script)
-    copy_runtime_file(Path(__file__), installed_manager)
-    os.chmod(installed_script, 0o755)
-    os.chmod(installed_manager, 0o755)
+    previous_script = file_snapshot(installed_script)
+    previous_manager = file_snapshot(installed_manager)
 
-    original_base_url = state.get("original_base_url") if is_bridge_url(current_url) else current_url
+    original_base_url = state.get("original_base_url") if current_is_bridge else current_url
     if not isinstance(original_base_url, str):
         original_base_url = upstream
     backup_path: Optional[Path] = None
     config_changed = current_url != bridge_url
-    if config_changed:
-        backup_path = home / ("config.toml.image-bridge-backup-" + timestamp())
-        shutil.copy2(config_path, backup_path)
-        os.chmod(backup_path, 0o600)
-        updated = replace_provider_base_url(config_text, provider, bridge_url)
-        atomic_write(config_path, updated.encode("utf-8"), config_path.stat().st_mode & 0o777)
-        try:
-            validate_config(runtime, config_path)
-        except Exception:
-            atomic_write(config_path, config_text.encode("utf-8"), config_path.stat().st_mode & 0o777)
-            raise
-
-    if platform_name == "darwin":
-        service_payload = plist_payload(
-            runtime, installed_script, upstream, model, args.host, args.port, mount, log_dir
-        )
-    else:
-        service_payload = windows_task_payload(
-            runtime,
-            installed_script,
-            upstream,
-            model,
-            args.host,
-            args.port,
-            mount,
-            log_dir / "image-bridge.log",
-            windows_user_sid(),
-        )
-    atomic_write(service_path, service_payload, 0o644)
-    state_payload = {
-        "schema": 2,
-        "provider": provider,
-        "original_base_url": original_base_url,
-        "bridge_base_url": bridge_url,
-        "upstream": upstream,
-        "model": model,
-        "runtime": runtime,
-        "runtime_version": runtime_version,
-        "ssl": ssl_version,
-        "service_definition": str(service_path),
-        "service_kind": "launchd" if platform_name == "darwin" else "task-scheduler",
-        "backup": str(backup_path) if backup_path else state.get("backup"),
-        "installed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-    }
-    atomic_write(state_path, json.dumps(state_payload, indent=2).encode("utf-8") + b"\n")
+    service_start_attempted = False
     try:
+        copy_runtime_file(source_script, installed_script)
+        copy_runtime_file(Path(__file__), installed_manager)
+        os.chmod(installed_script, 0o755)
+        os.chmod(installed_manager, 0o755)
+
+        if config_changed:
+            backup_path = home / ("config.toml.image-bridge-backup-" + timestamp())
+            shutil.copy2(config_path, backup_path)
+            os.chmod(backup_path, 0o600)
+            updated = replace_provider_base_url(config_text, provider, bridge_url)
+            atomic_write(config_path, updated.encode("utf-8"), config_path.stat().st_mode & 0o777)
+            validate_config(runtime, config_path)
+
+        if platform_name == "darwin":
+            service_payload = plist_payload(
+                runtime, installed_script, upstream, model, args.host, args.port, mount, log_dir
+            )
+        else:
+            service_payload = windows_task_payload(
+                runtime,
+                installed_script,
+                upstream,
+                model,
+                args.host,
+                args.port,
+                mount,
+                log_dir / "image-bridge.log",
+                windows_user_sid(),
+            )
+        atomic_write(service_path, service_payload, 0o644)
+        state_payload = {
+            "schema": 3,
+            "bridge_version": BRIDGE_VERSION,
+            "provider": provider,
+            "original_base_url": original_base_url,
+            "bridge_base_url": bridge_url,
+            "upstream": upstream,
+            "model": model,
+            "runtime": runtime,
+            "runtime_version": runtime_version,
+            "ssl": ssl_version,
+            "service_definition": str(service_path),
+            "service_kind": "launchd" if platform_name == "darwin" else "task-scheduler",
+            "backup": str(backup_path) if backup_path else state.get("backup"),
+            "installed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        atomic_write(state_path, json.dumps(state_payload, indent=2).encode("utf-8") + b"\n")
+        service_start_attempted = True
         if platform_name == "darwin":
             start_service(service_path)
         else:
@@ -580,7 +607,13 @@ def command_install(args: argparse.Namespace) -> None:
             parsed_bridge.scheme,
             parsed_bridge.netloc,
         )
-        healthy, health_detail = wait_for_health(health_url, timeout_seconds=15)
+        healthy, health_detail = wait_for_health(
+            health_url,
+            timeout_seconds=15,
+            expected_upstream=upstream,
+            expected_model=model,
+            expected_version=BRIDGE_VERSION,
+        )
         if not healthy:
             raise ManagerError("bridge did not become healthy after service start: " + health_detail)
     except Exception:
@@ -590,16 +623,20 @@ def command_install(args: argparse.Namespace) -> None:
             atomic_write(state_path, previous_state)
         elif state_path.exists():
             state_path.unlink()
-        if platform_name == "win32":
+        if platform_name == "darwin" and service_start_attempted:
+            stop_service()
+        elif platform_name == "win32" and service_start_attempted:
             delete_windows_service()
         if previous_service is not None:
             atomic_write(service_path, previous_service, 0o644)
         elif service_path.exists():
             service_path.unlink()
+        restore_file(installed_script, previous_script)
+        restore_file(installed_manager, previous_manager)
         try:
-            if platform_name == "darwin" and previous_service is not None:
+            if platform_name == "darwin" and previous_service is not None and service_start_attempted:
                 start_service(service_path)
-            elif platform_name == "win32" and previous_service is not None:
+            elif platform_name == "win32" and previous_service is not None and service_start_attempted:
                 install_windows_service(service_path)
         except Exception:
             pass
@@ -629,16 +666,23 @@ def command_preflight(args: argparse.Namespace) -> None:
     install_dir = home / "image-bridge"
     state_path = install_dir / "state.json"
     state = load_state(state_path)
+    mount = "/" + args.mount.strip("/") if args.mount.strip("/") else ""
+    local_host = "[%s]" % args.host if ":" in args.host else args.host
+    bridge_url = "http://%s:%d%s/" % (local_host, args.port, mount)
+    known_bridge_urls = [bridge_url, str(state.get("bridge_base_url", ""))]
+    current_is_bridge = is_bridge_url(current_url, known_bridge_urls)
     service_path = (
         Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
         if platform_name == "darwin"
         else install_dir / "windows-task.xml"
     )
     legacy = legacy_upstream(service_path) if platform_name == "darwin" else None
-    inferred = args.upstream or state.get("original_base_url") or legacy
-    if not inferred and not is_bridge_url(current_url):
+    inferred = args.upstream
+    if not inferred and not current_is_bridge:
         inferred = current_url
-    upstream = validate_upstream(inferred) if isinstance(inferred, str) else None
+    if not inferred:
+        inferred = state.get("original_base_url") or legacy
+    upstream = validate_upstream(inferred, args.port) if isinstance(inferred, str) else None
     runtime_error: Optional[str] = None
     runtime: Optional[str] = None
     runtime_version: Optional[str] = None
@@ -647,9 +691,6 @@ def command_preflight(args: argparse.Namespace) -> None:
         runtime, runtime_version, ssl_version = find_runtime(args.python)
     except ManagerError as error:
         runtime_error = str(error)
-    mount = "/" + args.mount.strip("/") if args.mount.strip("/") else ""
-    local_host = "[%s]" % args.host if ":" in args.host else args.host
-    bridge_url = "http://%s:%d%s/" % (local_host, args.port, mount)
     plan = {
         "applicable": platform_name in {"darwin", "win32"} and upstream is not None and runtime is not None,
         "platform": platform_name,
@@ -657,7 +698,7 @@ def command_preflight(args: argparse.Namespace) -> None:
         "model": model,
         "current_base_url": current_url,
         "upstream": upstream,
-        "already_installed": bool(state) and current_url == bridge_url,
+        "already_installed": bool(state) and current_is_bridge,
         "bridge_base_url": bridge_url,
         "runtime": {
             "found": runtime is not None,
@@ -673,6 +714,10 @@ def command_preflight(args: argparse.Namespace) -> None:
         ],
         "credentials_will_be_persisted": False,
         "network_probe_performed": False,
+        "image_request_contract": {
+            "n": "n=1 is consumed locally; n>1 is rejected without contacting upstream",
+            "live_generation_verified": False,
+        },
         "note": (
             "Preflight is read-only and does not prove that the upstream supports the "
             "Responses image_generation tool."
@@ -681,22 +726,68 @@ def command_preflight(args: argparse.Namespace) -> None:
     print(json.dumps(plan, indent=2))
 
 
-def health_check(url: str) -> Tuple[bool, str]:
+def validate_health_payload(
+    payload: object,
+    expected_upstream: Optional[str] = None,
+    expected_model: Optional[str] = None,
+    expected_version: Optional[str] = None,
+) -> Tuple[bool, str]:
+    if not isinstance(payload, dict) or payload.get("status") != "ok":
+        return False, "invalid bridge health payload"
+    actual_upstream = str(payload.get("upstream", ""))
+    actual_model = str(payload.get("responses_model", ""))
+    actual_version = str(payload.get("version", "unknown"))
+    if expected_upstream and normalized_url(actual_upstream) != normalized_url(expected_upstream):
+        return False, "bridge upstream mismatch: " + actual_upstream
+    if expected_model and actual_model != expected_model:
+        return False, "bridge model mismatch: " + actual_model
+    if expected_version and actual_version != expected_version:
+        return False, "bridge version mismatch: " + actual_version
+    return True, "version=%s Python=%s upstream=%s model=%s" % (
+        actual_version,
+        payload.get("python", "unknown"),
+        actual_upstream,
+        actual_model,
+    )
+
+
+def health_check(
+    url: str,
+    expected_upstream: Optional[str] = None,
+    expected_model: Optional[str] = None,
+    expected_version: Optional[str] = None,
+) -> Tuple[bool, str]:
     try:
         with urllib.request.urlopen(url, timeout=5) as response:
             payload = json.load(response)
-        return response.status == 200, "version=%s Python=%s" % (
-            payload.get("version", "unknown"), payload.get("python", "unknown")
+        if response.status != 200:
+            return False, "bridge health returned HTTP %d" % response.status
+        return validate_health_payload(
+            payload,
+            expected_upstream=expected_upstream,
+            expected_model=expected_model,
+            expected_version=expected_version,
         )
     except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         return False, str(error)
 
 
-def wait_for_health(url: str, timeout_seconds: float) -> Tuple[bool, str]:
+def wait_for_health(
+    url: str,
+    timeout_seconds: float,
+    expected_upstream: Optional[str] = None,
+    expected_model: Optional[str] = None,
+    expected_version: Optional[str] = None,
+) -> Tuple[bool, str]:
     deadline = time.monotonic() + timeout_seconds
     detail = "health check timed out"
     while time.monotonic() < deadline:
-        healthy, detail = health_check(url)
+        healthy, detail = health_check(
+            url,
+            expected_upstream=expected_upstream,
+            expected_model=expected_model,
+            expected_version=expected_version,
+        )
         if healthy:
             return True, detail
         time.sleep(0.2)
@@ -740,7 +831,13 @@ def command_doctor(args: argparse.Namespace) -> None:
     bridge_url = str(state.get("bridge_base_url", "http://127.0.0.1:8787/openai/"))
     parsed = urllib.parse.urlsplit(bridge_url)
     health_url = "%s://%s/__codex_image_bridge__/health" % (parsed.scheme, parsed.netloc)
-    healthy, health_detail = wait_for_health(health_url, timeout_seconds=3)
+    healthy, health_detail = wait_for_health(
+        health_url,
+        timeout_seconds=3,
+        expected_upstream=str(state.get("upstream", "")) or None,
+        expected_model=str(state.get("model", "")) or None,
+        expected_version=str(state.get("bridge_version", BRIDGE_VERSION)),
+    )
     checks.append(("bridge health", healthy, health_detail))
     upstream = str(state.get("upstream", ""))
     tls_ok, tls_detail = tls_check(upstream) if upstream else (False, "upstream missing from state")

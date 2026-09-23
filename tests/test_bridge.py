@@ -4,6 +4,7 @@ import ssl
 import sys
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -86,6 +87,22 @@ class BridgeUnitTests(unittest.TestCase):
             [{"type": "image_generation", "action": "generate", "size": "auto", "quality": "auto"}],
         )
 
+    def test_generation_consumes_single_image_count(self):
+        payload = build_responses_payload(
+            {"prompt": "draw a fox", "n": 1},
+            "generate",
+            "gpt-main",
+        )
+        self.assertNotIn("n", payload["tools"][0])
+
+    def test_generation_rejects_multiple_images(self):
+        with self.assertRaisesRegex(ValueError, "supports only n=1"):
+            build_responses_payload(
+                {"prompt": "draw a fox", "n": 2},
+                "generate",
+                "gpt-main",
+            )
+
     def test_edit_payload(self):
         payload = build_responses_payload(
             {"prompt": "add a hat", "images": [{"image_url": "data:image/png;base64,abc"}]},
@@ -166,6 +183,13 @@ class BridgeIntegrationTests(unittest.TestCase):
         self.assertEqual(path, "/gateway/responses")
         self.assertEqual(upstream_payload["model"], "gpt-main")
         self.assertEqual(upstream_payload["tools"][0]["type"], "image_generation")
+
+    def test_rejects_multiple_images_without_calling_upstream(self):
+        request_count = len(MockUpstreamHandler.requests)
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.post("/images/generations", {"prompt": "draw foxes", "n": 2})
+        self.assertEqual(raised.exception.code, 400)
+        self.assertEqual(len(MockUpstreamHandler.requests), request_count)
 
     def test_transparently_proxies_responses(self):
         status, result = self.post("/responses", {"tools": [{"type": "ping"}]})

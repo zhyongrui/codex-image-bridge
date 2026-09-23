@@ -34,6 +34,9 @@ if (-not $Python) { throw "Install Python 3.11 or newer, then rerun preflight." 
 
 3. Read the JSON. Do not install automatically when `applicable` is false.
 4. Explain that preflight does not prove upstream `image_generation` support.
+   It does verify the bridge's static Images-to-Responses contract: `n=1` is
+   consumed locally because Responses `image_generation` does not accept the
+   Images API `n` field, while `n>1` is rejected without contacting upstream.
    Use the user's existing error evidence. Do not send a billable image request
    unless the user explicitly asks for a live generation test.
 
@@ -85,6 +88,7 @@ On Windows PowerShell:
 ```
 
 6. Report the bridge version, runtime, config, TLS, and service results.
+   Treat an upstream, model, or bridge-version mismatch as a failed repair.
 7. Ask the user to restart Codex or open a new task, then invoke `$imagegen`.
    Only perform a real image generation in the current task when explicitly
    requested because it can consume quota.

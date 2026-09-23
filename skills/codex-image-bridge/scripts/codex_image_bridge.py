@@ -29,7 +29,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
-BRIDGE_VERSION = "1.3.0"
+BRIDGE_VERSION = "1.4.0"
 
 
 @dataclass(frozen=True)
@@ -85,8 +85,15 @@ def build_responses_payload(
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("image request requires a non-empty prompt")
 
+    image_count = image_request.get("n", 1)
+    if isinstance(image_count, bool) or not isinstance(image_count, int) or image_count != 1:
+        raise ValueError(
+            "image bridge supports only n=1; Responses image_generation does not accept "
+            "the Images API n parameter"
+        )
+
     tool: Dict[str, Any] = {"type": "image_generation", "action": action}
-    for key in ("size", "quality", "background", "n"):
+    for key in ("size", "quality", "background"):
         _copy_tool_option(image_request, tool, key)
 
     if action == "generate":

@@ -44,6 +44,12 @@ The bridge listens only on loopback and forwards Codex's existing authorization
 headers in memory. It never stores credentials in its source, state, or service
 definition. Failed installs restore the prior config and service.
 
+The bridge translates standalone Images requests to the Responses
+`image_generation` tool. A single-image `n=1` request is normalized without
+forwarding `n`, which is not a Responses image-tool parameter. Requests for
+multiple images are rejected locally rather than silently under-delivered or
+expanded into multiple billable upstream calls.
+
 ## Manual Commands
 
 On macOS:

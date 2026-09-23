@@ -51,6 +51,11 @@ $codex-image-bridge 修复当前 provider 不能生图的问题
 - 不自动重试可能已经到达上游的生图 POST；
 - 卸载时只恢复本工具实际修改过且仍未被用户再次改动的地址。
 
+桥接器会把独立 Images API 请求转换为 Responses 的 `image_generation`
+工具调用。单图请求中的 `n=1` 会在本地被消费，不会错误地传给 Responses；
+多图请求会在本地明确拒绝，不会静默少生成，也不会自动扩展成多个可能计费的
+上游请求。
+
 自动安装已在 macOS 和 Windows 原生环境中验证。Windows 使用当前用户的
 计划任务，并在可用时通过 `pythonw.exe` 后台运行，不会持续显示命令行窗口。
 桥接器只使用 Python 标准库。

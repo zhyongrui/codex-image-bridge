@@ -74,6 +74,12 @@ task definition when possible.
 
 - `404` or `405` from `/images/generations`: the provider likely lacks the
   standalone Images API and is a candidate for this bridge.
+- `400` saying the bridge supports only `n=1`: the caller requested multiple
+  images. The bridge intentionally does not fan this out into multiple
+  billable Responses requests.
+- An upstream `unknown_parameter` for `tools[0].n` indicates an outdated bridge
+  older than 1.4.0. Reinstall from the current skill scripts before testing
+  again.
 - `502` with TLS EOF: run doctor. Do not retry the POST automatically.
 - `401` or `403`: preserve the upstream response and ask the user to verify
   provider credentials or image entitlement. Never display the credential.
