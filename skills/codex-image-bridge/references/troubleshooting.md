@@ -80,6 +80,10 @@ task definition when possible.
 - An upstream `unknown_parameter` for `tools[0].n` indicates an outdated bridge
   older than 1.4.0. Reinstall from the current skill scripts before testing
   again.
+- `Input must be a list` or `Stream must be set to true` from the upstream
+  Responses endpoint indicates a bridge older than 1.5.0. Reinstall from the
+  current skill scripts; translated image requests now use list input and
+  stream the Responses result.
 - `502` with TLS EOF: run doctor. Do not retry the POST automatically.
 - `401` or `403`: preserve the upstream response and ask the user to verify
   provider credentials or image entitlement. Never display the credential.

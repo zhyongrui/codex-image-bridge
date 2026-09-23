@@ -29,7 +29,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
-BRIDGE_VERSION = "1.4.0"
+BRIDGE_VERSION = "1.5.0"
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ def build_responses_payload(
         _copy_tool_option(image_request, tool, key)
 
     if action == "generate":
-        model_input: Any = prompt
+        model_input: Any = [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}]
     else:
         images = image_request.get("images")
         if not isinstance(images, list) or not images:
@@ -114,7 +114,7 @@ def build_responses_payload(
         "model": responses_model,
         "input": model_input,
         "tools": [tool],
-        "stream": False,
+        "stream": True,
         "store": False,
     }
 
@@ -134,6 +134,51 @@ def extract_image_results(response_payload: Dict[str, Any]) -> Tuple[List[str], 
             if revised_prompt is None and isinstance(candidate, str):
                 revised_prompt = candidate
     return results, revised_prompt
+
+
+def extract_streamed_image_response(events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    output: List[Dict[str, Any]] = []
+    revised_prompt: Optional[str] = None
+
+    def visit(value: Any) -> None:
+        nonlocal revised_prompt
+        if isinstance(value, dict):
+            if value.get("type") == "image_generation_call" and value.get("result"):
+                output.append(value)
+            candidate = value.get("revised_prompt")
+            if revised_prompt is None and isinstance(candidate, str):
+                revised_prompt = candidate
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for event in events:
+        visit(event)
+    response: Dict[str, Any] = {"output": output, "created_at": time.time()}
+    if revised_prompt:
+        response["revised_prompt"] = revised_prompt
+    return response
+
+
+def read_image_response(response: Any) -> Dict[str, Any]:
+    content_type = response.headers.get("Content-Type", "").lower()
+    if "text/event-stream" not in content_type:
+        return json.loads(response.read().decode("utf-8"))
+
+    events: List[Dict[str, Any]] = []
+    for raw_line in response:
+        line = raw_line.decode("utf-8").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        event = json.loads(data)
+        if isinstance(event, dict):
+            events.append(event)
+    return extract_streamed_image_response(events)
 
 
 def convert_responses_to_images(
@@ -271,12 +316,12 @@ def make_handler(config: BridgeConfig):
             started = time.monotonic()
             try:
                 with self._open_upstream(request) as response:
-                    response_body = response.read()
                     status = response.status
                     if status < 200 or status >= 300:
+                        response_body = response.read()
                         self._relay_buffered_response(status, response.headers.items(), response_body)
                         return
-                    response_payload = json.loads(response_body.decode("utf-8"))
+                    response_payload = read_image_response(response)
                     converted = convert_responses_to_images(response_payload, image_request)
                     logging.info(
                         "translated image %s completed in %.2fs with %d image(s)",

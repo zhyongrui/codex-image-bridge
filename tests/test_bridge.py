@@ -17,6 +17,7 @@ from codex_image_bridge import (
     build_responses_payload,
     convert_responses_to_images,
     create_server,
+    extract_streamed_image_response,
     image_endpoint,
     upstream_error_message,
     upstream_url,
@@ -81,7 +82,11 @@ class BridgeUnitTests(unittest.TestCase):
             "gpt-main",
         )
         self.assertEqual(payload["model"], "gpt-main")
-        self.assertEqual(payload["input"], "draw a fox")
+        self.assertEqual(
+            payload["input"],
+            [{"role": "user", "content": [{"type": "input_text", "text": "draw a fox"}]}],
+        )
+        self.assertTrue(payload["stream"])
         self.assertEqual(
             payload["tools"],
             [{"type": "image_generation", "action": "generate", "size": "auto", "quality": "auto"}],
@@ -122,6 +127,12 @@ class BridgeUnitTests(unittest.TestCase):
         )
         self.assertEqual(converted["created"], 1780000000)
         self.assertEqual(converted["data"], [{"b64_json": FAKE_IMAGE}])
+
+    def test_streamed_response_conversion(self):
+        response = extract_streamed_image_response(
+            [{"type": "response.output_item.done", "item": {"type": "image_generation_call", "result": FAKE_IMAGE}}]
+        )
+        self.assertEqual(response["output"][0]["result"], FAKE_IMAGE)
 
     def test_tls_error_explains_that_request_was_not_retried(self):
         message = upstream_error_message(ssl.SSLError("EOF occurred in violation of protocol"))
