@@ -29,7 +29,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
-BRIDGE_VERSION = "1.5.0"
+BRIDGE_VERSION = "1.5.1"
 
 
 @dataclass(frozen=True)
@@ -219,7 +219,7 @@ def filtered_request_headers(headers: Iterable[Tuple[str, str]], translated: boo
         result[name] = value
     if translated:
         result["Content-Type"] = "application/json"
-        result["Accept"] = "application/json"
+        result["Accept"] = "text/event-stream"
         result["Accept-Encoding"] = "identity"
     return result
 

@@ -84,6 +84,9 @@ task definition when possible.
   Responses endpoint indicates a bridge older than 1.5.0. Reinstall from the
   current skill scripts; translated image requests now use list input and
   stream the Responses result.
+- `502` with `Connection reset by peer` after a streaming image request may
+  indicate a bridge older than 1.5.1 sending `Accept: application/json` with
+  `stream: true`. Reinstall so translated requests advertise SSE correctly.
 - `502` with TLS EOF: run doctor. Do not retry the POST automatically.
 - `401` or `403`: preserve the upstream response and ask the user to verify
   provider credentials or image entitlement. Never display the credential.

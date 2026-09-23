@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 
 LABEL = "com.codex.image-bridge"
-BRIDGE_VERSION = "1.5.0"
+BRIDGE_VERSION = "1.5.1"
 WINDOWS_TASK_NAME = "Codex Image Bridge"
 TASK_XML_NAMESPACE = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 DEFAULT_PORT = 8787

@@ -29,6 +29,7 @@ FAKE_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
 
 class MockUpstreamHandler(BaseHTTPRequestHandler):
     requests = []
+    request_headers = []
 
     def log_message(self, fmt, *args):
         pass
@@ -38,6 +39,7 @@ class MockUpstreamHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         payload = json.loads(body) if body else None
         self.__class__.requests.append((self.path, payload))
+        self.__class__.request_headers.append(dict(self.headers.items()))
         if self.path == "/gateway/responses" and payload.get("tools") == [{"type": "ping"}]:
             response = {"proxied": True}
         else:
@@ -153,6 +155,7 @@ class BridgeIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         MockUpstreamHandler.requests = []
+        MockUpstreamHandler.request_headers = []
         cls.upstream = ThreadingHTTPServer(("127.0.0.1", 0), MockUpstreamHandler)
         cls.upstream_thread = threading.Thread(target=cls.upstream.serve_forever, daemon=True)
         cls.upstream_thread.start()
@@ -194,6 +197,7 @@ class BridgeIntegrationTests(unittest.TestCase):
         self.assertEqual(path, "/gateway/responses")
         self.assertEqual(upstream_payload["model"], "gpt-main")
         self.assertEqual(upstream_payload["tools"][0]["type"], "image_generation")
+        self.assertEqual(MockUpstreamHandler.request_headers[-1]["Accept"], "text/event-stream")
 
     def test_rejects_multiple_images_without_calling_upstream(self):
         request_count = len(MockUpstreamHandler.requests)
